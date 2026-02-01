@@ -1,15 +1,23 @@
 import Cocoa
 import FlutterMacOS
+import UserNotifications
 
-public class LocalNotifierPlugin: NSObject, FlutterPlugin, NSUserNotificationCenterDelegate {
-    var registrar: FlutterPluginRegistrar!;
+public class LocalNotifierPlugin: NSObject, FlutterPlugin, UNUserNotificationCenterDelegate {
+    var registrar: FlutterPluginRegistrar!
     var channel: FlutterMethodChannel!
-    
-    var notificationDict: Dictionary<String, NSUserNotification> = [:]
     
     public override init() {
         super.init()
-        NSUserNotificationCenter.default.delegate = self
+        UNUserNotificationCenter.current().delegate = self
+        requestNotificationPermission()
+    }
+    
+    private func requestNotificationPermission() {
+        UNUserNotificationCenter.current().requestAuthorization(options: [.alert, .sound, .badge]) { granted, error in
+            if let error = error {
+                print("Notification permission error: \(error.localizedDescription)")
+            }
+        }
     }
     
     public static func register(with registrar: FlutterPluginRegistrar) {
@@ -21,13 +29,11 @@ public class LocalNotifierPlugin: NSObject, FlutterPlugin, NSUserNotificationCen
     }
     
     public func handle(_ call: FlutterMethodCall, result: @escaping FlutterResult) {
-        switch (call.method) {
+        switch call.method {
         case "notify":
             notify(call, result: result)
-            break
         case "close":
             close(call, result: result)
-            break
         default:
             result(FlutterMethodNotImplemented)
         }
@@ -40,52 +46,87 @@ public class LocalNotifierPlugin: NSObject, FlutterPlugin, NSUserNotificationCen
         let subtitle: String? = args["subtitle"] as? String
         let body: String? = args["body"] as? String
         
-        let notification = NSUserNotification()
-        notification.identifier = identifier
-        notification.title = title
-        notification.subtitle = subtitle
-        notification.informativeText = body
-        notification.soundName = NSUserNotificationDefaultSoundName
+        let content = UNMutableNotificationContent()
+        if let title = title {
+            content.title = title
+        }
+        if let subtitle = subtitle {
+            content.subtitle = subtitle
+        }
+        if let body = body {
+            content.body = body
+        }
+        content.sound = .default
         
-        let actions: [NSDictionary]? = args["actions"] as? [NSDictionary];
-        
-        if (actions != nil && !(actions!.isEmpty)) {
-            let actionDict =  actions!.first as! [String: Any]
-            let actionText: String? = actionDict["text"] as? String
-            notification.actionButtonTitle = actionText!
+        // Handle actions
+        let actions: [NSDictionary]? = args["actions"] as? [NSDictionary]
+        if let actions = actions, !actions.isEmpty {
+            let actionDict = actions.first as! [String: Any]
+            let actionText: String = actionDict["text"] as? String ?? "Action"
+            
+            let action = UNNotificationAction(
+                identifier: "\(identifier)_action",
+                title: actionText,
+                options: .foreground
+            )
+            let category = UNNotificationCategory(
+                identifier: "\(identifier)_category",
+                actions: [action],
+                intentIdentifiers: [],
+                options: []
+            )
+            UNUserNotificationCenter.current().setNotificationCategories([category])
+            content.categoryIdentifier = "\(identifier)_category"
         }
         
-        NSUserNotificationCenter.default.deliver(notification)
-        self.notificationDict[identifier] = notification
+        // Trigger immediately
+        let request = UNNotificationRequest(
+            identifier: identifier,
+            content: content,
+            trigger: nil // nil triggers immediately
+        )
         
-        result(true)
+        UNUserNotificationCenter.current().add(request) { error in
+            if let error = error {
+                print("Error delivering notification: \(error.localizedDescription)")
+                result(false)
+            } else {
+                self._invokeMethod("onLocalNotificationShow", identifier)
+                result(true)
+            }
+        }
     }
     
     public func close(_ call: FlutterMethodCall, result: @escaping FlutterResult) {
         let args = call.arguments as! Dictionary<String, Any>
         let identifier: String = args["identifier"] as! String
         
-        let notification: NSUserNotification? = self.notificationDict[identifier]
+        UNUserNotificationCenter.current().removeDeliveredNotifications(withIdentifiers: [identifier])
+        UNUserNotificationCenter.current().removePendingNotificationRequests(withIdentifiers: [identifier])
         
-        if (notification != nil) {
-            NSUserNotificationCenter.default.removeDeliveredNotification(notification!)
-            self.notificationDict[identifier] = nil
-            
-            _invokeMethod("onLocalNotificationClose", identifier)
-        }
+        _invokeMethod("onLocalNotificationClose", identifier)
         result(true)
     }
     
-    public func userNotificationCenter(_ center: NSUserNotificationCenter, didActivate notification: NSUserNotification) {
-        _invokeMethod("onLocalNotificationClick", notification.identifier!)
+    // MARK: - UNUserNotificationCenterDelegate
+    
+    public func userNotificationCenter(
+        _ center: UNUserNotificationCenter,
+        didReceive response: UNNotificationResponse,
+        withCompletionHandler completionHandler: @escaping () -> Void
+    ) {
+        let identifier = response.notification.request.identifier
+        _invokeMethod("onLocalNotificationClick", identifier)
+        completionHandler()
     }
     
-    public func userNotificationCenter(_ center: NSUserNotificationCenter, didDeliver notification: NSUserNotification) {
-        _invokeMethod("onLocalNotificationShow", notification.identifier!)
-    }
-    
-    public func userNotificationCenter(_ center: NSUserNotificationCenter, shouldPresent notification: NSUserNotification) -> Bool {
-        return true
+    public func userNotificationCenter(
+        _ center: UNUserNotificationCenter,
+        willPresent notification: UNNotification,
+        withCompletionHandler completionHandler: @escaping (UNNotificationPresentationOptions) -> Void
+    ) {
+        // Show notification even when app is in foreground
+        completionHandler([.banner, .sound])
     }
     
     public func _invokeMethod(_ methodName: String, _ notificationId: String) {
