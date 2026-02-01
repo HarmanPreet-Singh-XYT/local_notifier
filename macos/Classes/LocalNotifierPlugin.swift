@@ -1,148 +1,106 @@
+// Add this to your macos/Runner/AppDelegate.swift
+
 import Cocoa
 import FlutterMacOS
 import UserNotifications
 
-public class LocalNotifierPlugin: NSObject, FlutterPlugin, UNUserNotificationCenterDelegate {
-    var registrar: FlutterPluginRegistrar!
-    var channel: FlutterMethodChannel!
-    
-    public override init() {
-        super.init()
+@NSApplicationMain
+class AppDelegate: FlutterAppDelegate, UNUserNotificationCenterDelegate {
+    override func applicationDidFinishLaunching(_ aNotification: Notification) {
         UNUserNotificationCenter.current().delegate = self
         requestNotificationPermission()
+        
+        let controller = mainFlutterWindow?.contentViewController as! FlutterViewController
+        let notificationChannel = FlutterMethodChannel(
+            name: "com.yourapp/notifications",
+            binaryMessenger: controller.engine.binaryMessenger
+        )
+        
+        notificationChannel.setMethodCallHandler { [weak self] (call, result) in
+            guard let self = self else { return }
+            
+            switch call.method {
+            case "showNotification":
+                self.showNotification(call, result: result)
+            case "closeNotification":
+                self.closeNotification(call, result: result)
+            default:
+                result(FlutterMethodNotImplemented)
+            }
+        }
     }
     
     private func requestNotificationPermission() {
-        UNUserNotificationCenter.current().requestAuthorization(options: [.alert, .sound, .badge]) { granted, error in
+        UNUserNotificationCenter.current().requestAuthorization(
+            options: [.alert, .sound, .badge]
+        ) { granted, error in
             if let error = error {
                 print("Notification permission error: \(error.localizedDescription)")
             }
         }
     }
     
-    public static func register(with registrar: FlutterPluginRegistrar) {
-        let channel = FlutterMethodChannel(name: "local_notifier", binaryMessenger: registrar.messenger)
-        let instance = LocalNotifierPlugin()
-        instance.registrar = registrar
-        instance.channel = channel
-        registrar.addMethodCallDelegate(instance, channel: channel)
-    }
-    
-    public func handle(_ call: FlutterMethodCall, result: @escaping FlutterResult) {
-        switch call.method {
-        case "notify":
-            notify(call, result: result)
-        case "close":
-            close(call, result: result)
-        default:
-            result(FlutterMethodNotImplemented)
+    private func showNotification(_ call: FlutterMethodCall, result: @escaping FlutterResult) {
+        guard let args = call.arguments as? [String: Any],
+              let identifier = args["identifier"] as? String else {
+            result(FlutterError(code: "INVALID_ARGS", message: nil, details: nil))
+            return
         }
-    }
-    
-    public func notify(_ call: FlutterMethodCall, result: @escaping FlutterResult) {
-        let args = call.arguments as! Dictionary<String, Any>
-        let identifier: String = args["identifier"] as! String
-        let title: String? = args["title"] as? String
-        let subtitle: String? = args["subtitle"] as? String
-        let body: String? = args["body"] as? String
         
         let content = UNMutableNotificationContent()
-        if let title = title {
-            content.title = title
-        }
-        if let subtitle = subtitle {
-            content.subtitle = subtitle
-        }
-        if let body = body {
-            content.body = body
-        }
+        content.title = args["title"] as? String ?? ""
+        content.subtitle = args["subtitle"] as? String ?? ""
+        content.body = args["body"] as? String ?? ""
         content.sound = .default
         
-        // Handle actions
-        let actions: [NSDictionary]? = args["actions"] as? [NSDictionary]
-        if let actions = actions, !actions.isEmpty {
-            let actionDict = actions.first as! [String: Any]
-            let actionText: String = actionDict["text"] as? String ?? "Action"
-            
-            let action = UNNotificationAction(
-                identifier: "\(identifier)_action",
-                title: actionText,
-                options: .foreground
-            )
-            let category = UNNotificationCategory(
-                identifier: "\(identifier)_category",
-                actions: [action],
-                intentIdentifiers: [],
-                options: []
-            )
-            UNUserNotificationCenter.current().setNotificationCategories([category])
-            content.categoryIdentifier = "\(identifier)_category"
-        }
-        
-        // Trigger immediately
         let request = UNNotificationRequest(
             identifier: identifier,
             content: content,
-            trigger: nil // nil triggers immediately
+            trigger: nil
         )
         
         UNUserNotificationCenter.current().add(request) { error in
-            DispatchQueue.main.async {
-                if let error = error {
-                    print("Error delivering notification: \(error.localizedDescription)")
-                    result(false)
-                } else {
-                    self._invokeMethod("onLocalNotificationShow", identifier)
-                    result(true)
-                }
+            if let error = error {
+                result(FlutterError(code: "NOTIFICATION_ERROR", 
+                                  message: error.localizedDescription, 
+                                  details: nil))
+            } else {
+                result(true)
             }
         }
     }
     
-    public func close(_ call: FlutterMethodCall, result: @escaping FlutterResult) {
-        let args = call.arguments as! Dictionary<String, Any>
-        let identifier: String = args["identifier"] as! String
+    private func closeNotification(_ call: FlutterMethodCall, result: @escaping FlutterResult) {
+        guard let args = call.arguments as? [String: Any],
+              let identifier = args["identifier"] as? String else {
+            result(FlutterError(code: "INVALID_ARGS", message: nil, details: nil))
+            return
+        }
         
         UNUserNotificationCenter.current().removeDeliveredNotifications(withIdentifiers: [identifier])
-        UNUserNotificationCenter.current().removePendingNotificationRequests(withIdentifiers: [identifier])
-        
-        _invokeMethod("onLocalNotificationClose", identifier)
         result(true)
     }
     
     // MARK: - UNUserNotificationCenterDelegate
     
-    public func userNotificationCenter(
+    func userNotificationCenter(
         _ center: UNUserNotificationCenter,
         didReceive response: UNNotificationResponse,
         withCompletionHandler completionHandler: @escaping () -> Void
     ) {
-        let identifier = response.notification.request.identifier
-        _invokeMethod("onLocalNotificationClick", identifier)
+        // Handle notification click
         completionHandler()
     }
     
-    public func userNotificationCenter(
+    func userNotificationCenter(
         _ center: UNUserNotificationCenter,
         willPresent notification: UNNotification,
         withCompletionHandler completionHandler: @escaping (UNNotificationPresentationOptions) -> Void
     ) {
-        // Show notification even when app is in foreground
-        // Use availability check for different macOS versions
         if #available(macOS 11.0, *) {
             completionHandler([.banner, .sound])
         } else {
-            // For macOS 10.14 - 10.15, use .alert instead of .banner
             completionHandler([.alert, .sound])
-        }
-    }
-    
-    public func _invokeMethod(_ methodName: String, _ notificationId: String) {
-        DispatchQueue.main.async {
-            let args: NSDictionary = [
-                "notificationId": notificationId,
-            ]
-            self.channel.invokeMethod(methodName, arguments: args, result: nil)
         }
     }
 }
