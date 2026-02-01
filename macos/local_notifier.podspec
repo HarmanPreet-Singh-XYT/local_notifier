@@ -1,7 +1,3 @@
-#
-# To learn more about a Podspec see http://guides.cocoapods.org/syntax/podspec.html.
-# Run `pod lib lint local_notifier.podspec` to validate before publishing.
-#
 Pod::Spec.new do |s|
   s.name             = 'local_notifier'
   s.version          = '0.1.0'
@@ -16,7 +12,7 @@ A new flutter plugin project.
   s.source_files     = 'Classes/**/*'
   s.dependency 'FlutterMacOS'
 
-  # Updated minimum macOS version for UserNotifications framework
+  # macOS 10.14+ for UserNotifications framework
   s.platform = :osx, '10.14'
   
   # Add UserNotifications framework dependency

@@ -87,12 +87,14 @@ public class LocalNotifierPlugin: NSObject, FlutterPlugin, UNUserNotificationCen
         )
         
         UNUserNotificationCenter.current().add(request) { error in
-            if let error = error {
-                print("Error delivering notification: \(error.localizedDescription)")
-                result(false)
-            } else {
-                self._invokeMethod("onLocalNotificationShow", identifier)
-                result(true)
+            DispatchQueue.main.async {
+                if let error = error {
+                    print("Error delivering notification: \(error.localizedDescription)")
+                    result(false)
+                } else {
+                    self._invokeMethod("onLocalNotificationShow", identifier)
+                    result(true)
+                }
             }
         }
     }
@@ -126,13 +128,21 @@ public class LocalNotifierPlugin: NSObject, FlutterPlugin, UNUserNotificationCen
         withCompletionHandler completionHandler: @escaping (UNNotificationPresentationOptions) -> Void
     ) {
         // Show notification even when app is in foreground
-        completionHandler([.banner, .sound])
+        // Use availability check for different macOS versions
+        if #available(macOS 11.0, *) {
+            completionHandler([.banner, .sound])
+        } else {
+            // For macOS 10.14 - 10.15, use .alert instead of .banner
+            completionHandler([.alert, .sound])
+        }
     }
     
     public func _invokeMethod(_ methodName: String, _ notificationId: String) {
-        let args: NSDictionary = [
-            "notificationId": notificationId,
-        ]
-        channel.invokeMethod(methodName, arguments: args, result: nil)
+        DispatchQueue.main.async {
+            let args: NSDictionary = [
+                "notificationId": notificationId,
+            ]
+            self.channel.invokeMethod(methodName, arguments: args, result: nil)
+        }
     }
 }
