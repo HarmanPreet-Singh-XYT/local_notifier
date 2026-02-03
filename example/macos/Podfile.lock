@@ -1,6 +1,6 @@
 PODS:
   - FlutterMacOS (1.0.0)
-  - local_notifier (0.1.0):
+  - local_notifier (0.1.6):
     - FlutterMacOS
   - screen_retriever (0.0.1):
     - FlutterMacOS
@@ -29,12 +29,12 @@ EXTERNAL SOURCES:
     :path: Flutter/ephemeral/.symlinks/plugins/window_manager/macos
 
 SPEC CHECKSUMS:
-  FlutterMacOS: 8f6f14fa908a6fb3fba0cd85dbd81ec4b251fb24
-  local_notifier: e9506bc66fc70311e8bc7291fb70f743c081e4ff
-  screen_retriever: 59634572a57080243dd1bf715e55b6c54f241a38
-  tray_manager: 9064e219c56d75c476e46b9a21182087930baf90
-  window_manager: 3a1844359a6295ab1e47659b1a777e36773cd6e8
+  FlutterMacOS: d0db08ddef1a9af05a5ec4b724367152bb0500b1
+  local_notifier: 8eb7c13ff7a3b7d7b710be1a5578bd546db6378d
+  screen_retriever: 4f97c103641aab8ce183fa5af3b87029df167936
+  tray_manager: a104b5c81b578d83f3c3d0f40a997c8b10810166
+  window_manager: 1d01fa7ac65a6e6f83b965471b1a7fdd3f06166c
 
-PODFILE CHECKSUM: 353c8bcc5d5b0994e508d035b5431cfe18c1dea7
+PODFILE CHECKSUM: 0d3963a09fc94f580682bd88480486da345dc3f0
 
-COCOAPODS: 1.14.3
+COCOAPODS: 1.16.2
